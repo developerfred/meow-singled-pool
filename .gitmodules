@@ -1,3 +1,6 @@
 [submodule "lib/solbase"]
 	path = lib/solbase
 	url = https://github.com/Sol-DAO/solbase
+[submodule "lib/prb-math"]
+	path = lib/prb-math
+	url = https://github.com/PaulRBerg/prb-math

@@ -1,77 +1,100 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.23;
+pragma solidity ^0.8.23;
 
+import "lib/solbase/src/tokens/ERC20/ERC20.sol";
+import "lib/solbase/src/auth/Owned.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/utils/math/SafeMath.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
+import "lib/solbase/src/utils/ReentrancyGuard.sol";
 
-contract LiquidityPoolToken is ERC20Burnable, Ownable {
-    using SafeMath for uint256;
-
-    constructor() ERC20("LiquidityProviderToken", "LPT") {}
-
-    function mint(address to, uint256 amount) public onlyOwner {
-        _mint(to, amount);
-    }
+interface MeowERC20 is IERC20 {
+    function mint(address to, uint256 amount) external;
+    function burn(address from, uint256 amount) external;
 }
 
-contract LiquidityPool is ReentrancyGuard, Ownable {
-    using SafeMath for uint256;
+contract LiquidityPool is Owned {    
 
-    IERC20 public token;
-    LiquidityPoolToken public lpToken;
+    address public tokenFactory;
+    MeowERC20 public token;
+    MeowERC20 public reserveToken;
 
-    uint256 public constant reserveWeight = 100000; // Exemplo de peso da reserva
+    uint256 private reserveWeight; 
+    uint256 private slope; 
+        
+    event ReserveWeightUpdated(uint256 newWeight);
+    event SlopeUpdated(uint256 newSlope);
 
-    event LiquidityAdded(address indexed provider, uint256 tokenAmount, uint256 lpTokenAmount);
-    event LiquidityRemoved(address indexed provider, uint256 tokenAmount, uint256 lpTokenAmount);
-
-    constructor(address tokenAddress) {
-        token = IERC20(tokenAddress);
-        lpToken = new LiquidityPoolToken();
+    constructor(
+        address _tokenAddress,
+        address _reserveTokenAddress,
+        address _owner,
+        uint256 _initialReserveWeight,
+        uint256 _initialSlope
+    ) Owned(_owner) {
+        token = MeowERC20(_tokenAddress);
+        reserveToken = MeowERC20(_reserveTokenAddress);
+        reserveWeight = _initialReserveWeight;
+        slope = _initialSlope;
     }
 
-    function addLiquidity(uint256 tokenAmount) public nonReentrant {
-        require(tokenAmount > 0, "Token amount must be greater than 0");
-
-        uint256 lpTokenAmount = calculateLPTokensToMint(tokenAmount);
-        token.transferFrom(msg.sender, address(this), tokenAmount);
-        lpToken.mint(msg.sender, lpTokenAmount);
-
-        emit LiquidityAdded(msg.sender, tokenAmount, lpTokenAmount);
+    function setReserveWeight(uint256 _newWeight) external onlyOwner {
+        require(_newWeight > 0 && _newWeight <= 1000000, "Invalid reserve weight");
+        reserveWeight = _newWeight;
+        emit ReserveWeightUpdated(_newWeight);
     }
 
-    function removeLiquidity(uint256 lpTokenAmount) public nonReentrant {
-        require(lpTokenAmount > 0, "LP Token amount must be greater than 0");
-
-        uint256 tokenAmount = calculateTokensToWithdraw(lpTokenAmount);
-        lpToken.burnFrom(msg.sender, lpTokenAmount);
-        token.transfer(msg.sender, tokenAmount);
-
-        emit LiquidityRemoved(msg.sender, tokenAmount, lpTokenAmount);
+    function setSlope(uint256 _newSlope) external onlyOwner {
+        require(_newSlope > 0, "Invalid slope value");
+        slope = _newSlope;
+        emit SlopeUpdated(_newSlope);
     }
 
-    function calculatePrice() public view returns (uint256) {
-        uint256 tokenSupply = token.totalSupply();
-        uint256 tokenReserve = token.balanceOf(address(this));
-        return tokenReserve.mul(reserveWeight).div(tokenSupply);
+    function getReserveWeight() public view returns (uint256) {
+        return reserveWeight;
     }
 
-    function calculateLPTokensToMint(uint256 tokenAmount) public view returns (uint256) {
-        uint256 totalLiquidity = token.balanceOf(address(this));
-        if (totalLiquidity == 0) {
-            return tokenAmount;
-        } else {
-            uint256 totalLPTokens = lpToken.totalSupply();
-            return tokenAmount.mul(totalLPTokens).div(totalLiquidity);
-        }
+    function getSlope() public view returns (uint256) {
+        return slope;
     }
 
-    function calculateTokensToWithdraw(uint256 lpTokenAmount) public view returns (uint256) {
-        uint256 totalLPTokens = lpToken.totalSupply();
-        uint256 tokenReserve = token.balanceOf(address(this));
-        return lpTokenAmount.mul(tokenReserve).div(totalLPTokens);
+
+    function buyTokens(uint256 reserveTokenAmount) public {
+        require(reserveTokenAmount > 0, "Amount must be greater than 0");
+        uint256 tokenAmount = calculatePurchaseReturn(reserveTokenAmount);
+        require(reserveToken.transferFrom(msg.sender, address(this), reserveTokenAmount), "Transfer failed");
+        token.mint(msg.sender, tokenAmount);
+    }
+    
+      
+    function sellTokens(uint256 tokenAmount) public {
+        require(tokenAmount > 0, "Amount must be greater than 0");
+        uint256 reserveTokenAmount = calculateSaleReturn(tokenAmount);
+        token.burn(msg.sender, tokenAmount);
+        require(reserveToken.transfer(msg.sender, reserveTokenAmount), "Transfer failed");
+    }
+
+    function calculatePurchaseReturn(uint256 reserveTokenAmount) public view returns (uint256) {
+        uint256 reserveBalance = reserveToken.balanceOf(address(this));
+        uint256 supply = token.totalSupply();
+                
+        
+        return (reserveTokenAmount * supply) / (reserveBalance * (1000000 / reserveWeight));
+    }
+
+    
+    function calculateSaleReturn(uint256 tokenAmount) public view returns (uint256) {
+        uint256 reserveBalance = reserveToken.balanceOf(address(this));
+        uint256 supply = token.totalSupply();
+        
+        
+        return (tokenAmount * reserveBalance) / (supply * (1000000 / reserveWeight));
+    }
+
+    function receiveReserveDeposit(uint256 amount) public {
+        require(msg.sender == tokenFactory, "Only token factory can deposit reserve");
+        require(reserveToken.transferFrom(msg.sender, address(this), amount), "Transfer failed");
+    }
+
+    function setTokenFactory(address _tokenFactory) external  onlyOwner {
+        tokenFactory = _tokenFactory;
     }
 }
