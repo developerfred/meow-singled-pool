@@ -3,16 +3,21 @@ pragma solidity 0.8.23;
 
 import "lib/solbase/src/tokens/ERC20/ERC20.sol";
 import "lib/solbase/src/auth/Owned.sol";
+import "./manager/MinterManager.sol";
+import "lib/solbase/src/utils/SafeTransfer.sol";
+
 
 contract MEOWChild is ERC20, Owned {
+
     constructor(
         string memory name,
         string memory symbol,
         uint256 initialSupply,
         uint8 decimals,
-        address creator
+        address creator       
     ) Owned(creator) ERC20(name, symbol, decimals) {
         _mint(creator, initialSupply);
+        
     }
 
     function mint(address to, uint256 amount) public onlyOwner {
