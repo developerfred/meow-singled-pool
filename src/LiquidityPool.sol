@@ -37,6 +37,15 @@ contract LiquidityPool is PoolMath, ERC20Permit, ReentrancyGuard {
     /// @param sharesBurned The amount of liquidity pool shares burned
     event LiquidityRemoved(address indexed provider, uint256 tokenAAmount, uint256 tokenBAmount, uint256 sharesBurned);
 
+
+    /// @dev Emitted when liquidity is removed from the pool by a single token.
+    /// @param provider Address of the liquidity provider removing liquidity.
+    /// @param token Address of the token for which liquidity was removed.
+    /// @param amount The amount of the token withdrawn from the pool.
+    /// @param shares The amount of pool shares burned in the process.
+    event LiquiditySingleRemoved(address indexed provider, address indexed token, uint256 amount, uint256 shares);
+
+    
     /// @notice Emitted on token swap
     /// @param trader The address of the trader
     /// @param inputAmount The amount of input token
@@ -157,6 +166,42 @@ contract LiquidityPool is PoolMath, ERC20Permit, ReentrancyGuard {
         emit LiquidityAdded(
             msg.sender, token == address(tokenA) ? amount : 0, token == address(tokenB) ? amount : 0, sharesToMint
         );
+    }
+
+
+
+    /// @notice Removes liquidity from the pool for a single token, identified by its address.
+    /// @dev Burns pool shares and returns a proportional amount of the specified token to the liquidity provider.
+    /// @param token The address of the token to remove liquidity for.
+    /// @param shares The amount of pool shares to burn for removing liquidity.
+    function removeSingleSidedLiquidity(address token, uint256 shares) external nonReentrant {
+        require(token == address(tokenA) || token == address(tokenB), "Invalid token address");
+
+        uint256 totalSupply = totalSupply();
+        require(totalSupply > 0, "No liquidity in pool");
+
+        // Calculates the user's share of the token reserve based on the pool's total supply.
+        uint256 tokenReserve = token == address(tokenA) ? reserveA : reserveB;
+        uint256 amountToWithdraw = (tokenReserve * shares) / totalSupply;
+
+        // Ensures the user has enough shares to perform the withdrawal.
+        require(balanceOf(msg.sender) >= shares, "Not enough shares");
+
+        // Burns the user's shares.
+        _burn(msg.sender, shares);
+
+        // Updates the pool's reserves.
+        if (token == address(tokenA)) {
+            reserveA -= amountToWithdraw;
+        } else {
+            reserveB -= amountToWithdraw;
+        }
+
+        // Transfers the specified token back to the user.
+        IERC20(token).safeTransfer(msg.sender, amountToWithdraw);
+
+        // Emits an event with the adjusted amounts.
+        emit LiquiditySingleRemoved(msg.sender, token, amountToWithdraw, shares);
     }
 
     function _calculateEquivalent(address token, uint256 amount) private view returns (uint256) {
