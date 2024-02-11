@@ -1,142 +1,126 @@
 // SPDX-License-Identifier: MIT
-pragma solidity >=0.8.19;
+pragma solidity ^0.8.0;
 
-import "lib/solbase/src/tokens/ERC20/ERC20.sol";
-import "lib/solbase/src/auth/Owned.sol";
+import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Votes.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "lib/solbase/src/utils/ReentrancyGuard.sol";
-import "lib/solbase/src/utils/SafeTransferLib.sol";
-import "./MEOWChild.sol";
-import "./manager/MinterManager.sol";
-import { UD60x18, ud } from "@prb/math/src/UD60x18.sol";
+import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol";
+import "./math/PoolMath.sol";
+import {ReentrancyGuard} from "lib/solbase/src/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-interface MeowERC20 is IERC20 {
-    function mint(address to, uint256 amount) external;
-    function burn(address from, uint256 amount) external;
-}
+/// @title LiquidityPool for Token Swapping and Liquidity Provision
+/// @dev Extends ERC20 to include voting capabilities, utilizes PoolMath for calculating returns, and incorporates ReentrancyGuard for security.
+contract LiquidityPool is PoolMath, ERC20Permit, ReentrancyGuard {
+    using SafeERC20 for IERC20;
 
-contract LiquidityPool is Owned, ReentrancyGuard {    
+    IERC20 public tokenA;
+    IERC20 public tokenB;
 
-    address public tokenFactory;
-    address public minterManagerAddress;
-    MeowERC20 public token;
-    MeowERC20 public reserveToken;
+    uint256 private reserveA;
+    uint256 private reserveB;
 
-    uint256 private reserveWeight; 
-    uint256 private slope; 
+    uint256 public reserveWeight;
+    uint256 public slope;
 
-        
-    event ReserveWeightUpdated(uint256 newWeight);
-    event SlopeUpdated(uint256 newSlope);
-
-    modifier onlyOwnerOrTokenFactory() {
-        require(msg.sender == owner || msg.sender == tokenFactory, "Not authorized");
-        _;
-    }
-
-    constructor(
-        address _tokenAddress,
-        address _reserveTokenAddress,
-        address _owner,
-        uint256 _initialReserveWeight,
-        uint256 _initialSlope,
-        address _minterManagerAddress
-    ) Owned(_owner) {
-        require(_tokenAddress != address(0), "Invalid token address");
-        require(_reserveTokenAddress != address(0), "Invalid reserve token address");
-        token = MeowERC20(_tokenAddress);
-        reserveToken = MeowERC20(_reserveTokenAddress);
-        reserveWeight = _initialReserveWeight;
-        slope = _initialSlope;
-        minterManagerAddress = _minterManagerAddress;
-    }
-
-    function setReserveWeight(uint256 _newWeight) external onlyOwner {
-        require(_newWeight > 0 && _newWeight <= 1000000, "Invalid reserve weight");
-        reserveWeight = _newWeight;
-        emit ReserveWeightUpdated(_newWeight);
-    }
-
-    function setSlope(uint256 _newSlope) external onlyOwner {
-        require(_newSlope > 0, "Invalid slope value");
-        slope = _newSlope;
-        emit SlopeUpdated(_newSlope);
-    }
-
-    function getReserveWeight() public view returns (uint256) {
-        return reserveWeight;
-    }
-
-    function getSlope() public view returns (uint256) {
-        return slope;
-    }
-
-
-    function buyTokens(uint256 reserveTokenAmount) public nonReentrant {
-        require(reserveTokenAmount > 0, "Amount must be greater than 0");
-        uint256 tokenAmount = calculatePurchaseReturn(reserveTokenAmount);
-        require(tokenAmount > 0, "Invalid token amount");
-        
-        SafeTransferLib.safeTransferFrom(address(reserveToken), msg.sender, address(this), reserveTokenAmount);
-        // Transferir tokens do pool para o comprador ao invés de mintar
-        SafeTransferLib.safeTransfer(address(token), msg.sender, tokenAmount);
-    }
+    /// @notice Emitted when liquidity is added to the pool
+    /// @param provider The address of the liquidity provider
+    /// @param tokenAAmount The amount of token A added to the pool
+    /// @param tokenBAmount The amount of token B added to the pool
+    /// @param sharesIssued The amount of liquidity pool shares minted
+    event LiquidityAdded(address indexed provider, uint256 tokenAAmount, uint256 tokenBAmount, uint256 sharesIssued);
     
-      
-    function sellTokens(uint256 tokenAmount) public nonReentrant {
-        require(tokenAmount > 0, "Amount must be greater than 0");
-        uint256 reserveTokenAmount = calculateSaleReturn(tokenAmount);
-        require(reserveTokenAmount > 0, "Invalid reserve token amount");
-        
-        SafeTransferLib.safeTransferFrom(address(token), msg.sender, address(this), tokenAmount);
-        // Transferir tokens de reserva do pool para o vendedor ao invés de queimar
-        SafeTransferLib.safeTransfer(address(reserveToken), msg.sender, reserveTokenAmount);
+    /// @notice Emitted when liquidity is removed from the pool
+    /// @param provider The address of the liquidity provider
+    /// @param tokenAAmount The amount of token A removed from the pool
+    /// @param tokenBAmount The amount of token B removed from the pool
+    /// @param sharesBurned The amount of liquidity pool shares burned
+    event LiquidityRemoved(address indexed provider, uint256 tokenAAmount, uint256 tokenBAmount, uint256 sharesBurned);
+    
+    /// @notice Emitted on token swap
+    /// @param trader The address of the trader
+    /// @param inputAmount The amount of input token
+    /// @param outputAmount The amount of output token received
+    /// @param inputToken The input token address
+    /// @param outputToken The output token address
+    event TokenSwap(address indexed trader, uint256 inputAmount, uint256 outputAmount, address inputToken, address outputToken);
+    
+    constructor(address _tokenA, address _tokenB, uint256 _reserveWeight, uint256 _slope)
+        ERC20("LiquidityPoolShare", "LPS")
+        ERC20Permit("LiquidityPoolShare")
+    {
+        tokenA = IERC20(_tokenA);
+        tokenB = IERC20(_tokenB);
+        reserveWeight = _reserveWeight;
+        slope = _slope;
     }
 
-    function _calculateReturn(
-        uint256 amount,
-        uint256 supplyAmount,
-        uint256 reserveAmount,
-        bool isPurchase
-    ) internal view returns (uint256) {
-        uint256 weightUD60x18 = (1000000.ud60x18()).div(reserveWeight.ud60x18());
+    /// @notice Adds liquidity to the pool
+    /// @dev Mints pool shares to the liquidity provider based on the current pool ratio
+    /// @param _tokenAAmount Amount of token A to add
+    /// @param _tokenBAmount Amount of token B to add
+    function addLiquidity(uint256 _tokenAAmount, uint256 _tokenBAmount) external nonReentrant {
+        uint256 totalLiquidity = reserveA + reserveB;
+        uint256 totalSupply = totalSupply();
+        uint256 sharesToMint = totalLiquidity == 0 ? _tokenAAmount + _tokenBAmount : (totalSupply * (_tokenAAmount + _tokenBAmount)) / totalLiquidity;
 
-        if (isPurchase) {
-            // Cálculo para compra
-            return amount.ud60x18().mul(supplyAmount.ud60x18()).div(reserveAmount.ud60x18().mul(weightUD60x18)).intoUint256();
+        tokenA.safeTransferFrom(msg.sender, address(this), _tokenAAmount);
+        tokenB.safeTransferFrom(msg.sender, address(this), _tokenBAmount);
+
+        reserveA += _tokenAAmount;
+        reserveB += _tokenBAmount;
+
+        _mint(msg.sender, sharesToMint);
+
+        emit LiquidityAdded(msg.sender, _tokenAAmount, _tokenBAmount, sharesToMint);
+    }
+
+    /// @notice Removes liquidity from the pool
+    /// @dev Burns pool shares and returns proportional amounts of token A and B to the liquidity provider
+    /// @param _shares Amount of pool shares to burn
+    function removeLiquidity(uint256 _shares) external nonReentrant {
+        uint256 totalSupply = totalSupply();
+        uint256 tokenAAmount = (reserveA * _shares) / totalSupply;
+        uint256 tokenBAmount = (reserveB * _shares) / totalSupply;
+
+        _burn(msg.sender, _shares);
+
+        tokenA.safeTransfer(msg.sender, tokenAAmount);
+        tokenB.safeTransfer(msg.sender, tokenBAmount);
+
+        reserveA -= tokenAAmount;
+        reserveB -= tokenBAmount;
+
+        emit LiquidityRemoved(msg.sender, tokenAAmount, tokenBAmount, _shares);
+    }
+
+    /// @notice Swaps tokens using the pool
+    /// @dev Calculates the token return amount using the PoolMath library
+    /// @param _inputToken Address of the input token
+    /// @param _inputAmount Amount of the input token
+    function swapTokens(address _inputToken, uint256 _inputAmount) external {
+        require(_inputToken == address(tokenA) || _inputToken == address(tokenB), "Invalid input token");
+        bool isInputTokenA = _inputToken == address(tokenA);
+    
+        uint256 outputAmount;
+    
+        if (isInputTokenA) {
+            // Swap tokenA to tokenB
+            outputAmount = _calculateReturn(_inputAmount, reserveA, reserveB, reserveWeight, true);
+            require(tokenB.balanceOf(address(this)) >= outputAmount, "Insufficient liquidity for this trade");
+            tokenA.transferFrom(msg.sender, address(this), _inputAmount);
+            tokenB.transfer(msg.sender, outputAmount);
+            reserveA += _inputAmount;
+            reserveB -= outputAmount;
         } else {
-            // Cálculo para venda
-            return amount.ud60x18().mul(reserveAmount.ud60x18()).div(supplyAmount.ud60x18().mul(weightUD60x18)).intoUint256();
+            // Swap tokenB to tokenA
+            outputAmount = _calculateReturn(_inputAmount, reserveB, reserveA, reserveWeight, true);
+            require(tokenA.balanceOf(address(this)) >= outputAmount, "Insufficient liquidity for this trade");
+            tokenB.transferFrom(msg.sender, address(this), _inputAmount);
+            tokenA.transfer(msg.sender, outputAmount);
+            reserveB += _inputAmount;
+            reserveA -= outputAmount;
         }
+    
+        emit TokenSwap(msg.sender, _inputAmount, outputAmount, _inputToken, isInputTokenA ? address(tokenB) : address(tokenA));
     }
-
-    function calculatePurchaseReturn(uint256 reserveTokenAmount) public view returns (uint256) {
-        uint256 reserveBalance = reserveToken.balanceOf(address(this));
-        uint256 supply = token.totalSupply();
-
-        return _calculateReturn(reserveTokenAmount, supply, reserveBalance, true);
-    }
-
-    function calculateSaleReturn(uint256 tokenAmount) public view returns (uint256) {
-        uint256 reserveBalance = reserveToken.balanceOf(address(this));
-        uint256 supply = token.totalSupply();
-
-        return _calculateReturn(tokenAmount, supply, reserveBalance, false);
-    }
-    function receiveReserveDeposit(uint256 amount) public nonReentrant {
-        require(msg.sender == tokenFactory, "Only token factory can deposit reserve");
-        require(amount > 0, "Amount must be greater than 0");
-        
-        SafeTransferLib.safeTransferFrom(address(reserveToken), msg.sender, address(this), amount);
-    }
-
-    function setTokenFactory(address _tokenFactory) external onlyOwner {
-        require(_tokenFactory != address(0), "Invalid token factory address");
-        tokenFactory = _tokenFactory;
-    }
-
-    function authorizeWithManager(address meowChild) external onlyOwnerOrTokenFactory {
-        MinterManager(minterManagerAddress).authorizePool(meowChild, address(this));
-    }
-     
 }

@@ -1,4 +1,7 @@
 @openzeppelin/contracts/=node_modules/@openzeppelin/contracts/
 @prb/test/=node_modules/@prb/test/
 forge-std/=node_modules/forge-std/
-@prb/math/=lib/prb-math/
+@prb/math/=node_modules/@prb/math/
+ds-test/=lib/solbase/lib/ds-test/src/
+solbase/=lib/solbase/src/
+@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/

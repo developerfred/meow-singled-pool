@@ -6,7 +6,7 @@ import "lib/solbase/src/auth/Owned.sol";
 
 contract ReserveTokenMock is ERC20, Owned {
     constructor(string memory name, string memory symbol) Owned(msg.sender) ERC20(name, symbol, 18) {
-        _mint(msg.sender, 1000000 * 10**18); 
+        _mint(msg.sender, 1000000000 * 10**18); 
     }
 
     function mint(address to, uint256 amount) public onlyOwner {
