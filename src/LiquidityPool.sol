@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Votes.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -7,22 +7,30 @@ import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol";
 import "./math/PoolMath.sol";
 import { ReentrancyGuard } from "lib/solbase/src/utils/ReentrancyGuard.sol";
 import { SafeTransferLib } from "lib/solady/src/utils/SafeTransferLib.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /// @title LiquidityPool for Token Swapping and Liquidity Provision
 /// @dev Extends ERC20 to include voting capabilities, utilizes PoolMath for calculating returns, and incorporates
 /// ReentrancyGuard for security.
-contract LiquidityPool is PoolMath, ERC20Permit, ReentrancyGuard {
-    using SafeERC20 for IERC20;
+contract LiquidityPool is PoolMath, ERC20Permit, ReentrancyGuard {    
 
-    IERC20 public tokenA;
-    IERC20 public tokenB;
+    IERC20 immutable public tokenA;
+    IERC20 immutable public tokenB;
 
     uint256 private reserveA;
     uint256 private reserveB;
 
-    uint256 public reserveWeight;
-    uint256 public slope;
+    uint256 immutable public reserveWeight;
+    uint256 immutable public slope;
+
+
+    error InvalidInputToken(address inputToken);
+    error InsufficientLiquidity(uint256 requestedAmount, uint256 availableAmount);
+    error InsufficientShares(uint256 requestedShares, uint256 availableShares);
+    error InsufficientReserveForOtherToken(uint256 requestedAmount, uint256 availableReserve);
+    error InvalidTokenAddress(address token);
+    error NoLiquidityInPool();
+
+
 
     /// @notice Emitted when liquidity is added to the pool
     /// @param provider The address of the liquidity provider
@@ -97,10 +105,9 @@ contract LiquidityPool is PoolMath, ERC20Permit, ReentrancyGuard {
     /// @notice Removes liquidity from the pool
     /// @dev Burns pool shares and returns proportional amounts of token A and B to the liquidity provider
     /// @param _shares Amount of pool shares to burn
-    function removeLiquidity(uint256 _shares) external nonReentrant {
-        uint256 totalSupply = totalSupply();
-        uint256 tokenAAmount = (reserveA * _shares) / totalSupply;
-        uint256 tokenBAmount = (reserveB * _shares) / totalSupply;
+    function removeLiquidity(uint256 _shares) external nonReentrant {        
+        uint256 tokenAAmount = (reserveA * _shares) / totalSupply();
+        uint256 tokenBAmount = (reserveB * _shares) / totalSupply();
 
         _burn(msg.sender, _shares);
 
@@ -118,7 +125,7 @@ contract LiquidityPool is PoolMath, ERC20Permit, ReentrancyGuard {
     /// @param _inputToken Address of the input token
     /// @param _inputAmount Amount of the input token
     function swapTokens(address _inputToken, uint256 _inputAmount) external nonReentrant {
-        require(_inputToken == address(tokenA) || _inputToken == address(tokenB), "Invalid input token");
+        if (!(_inputToken == address(tokenA) || _inputToken == address(tokenB))) revert InvalidInputToken(_inputToken);
         bool isInputTokenA = _inputToken == address(tokenA);
 
         uint256 outputAmount;
@@ -126,7 +133,7 @@ contract LiquidityPool is PoolMath, ERC20Permit, ReentrancyGuard {
         if (isInputTokenA) {
             // Swap tokenA to tokenB
             outputAmount = _calculateReturn(_inputAmount, reserveA, reserveB, reserveWeight, true);
-            require(tokenB.balanceOf(address(this)) >= outputAmount, "Insufficient liquidity for this trade");
+            if (tokenB.balanceOf(address(this)) < outputAmount) revert InsufficientLiquidity(outputAmount, tokenB.balanceOf(address(this)));
             SafeTransferLib.safeTransferFrom(address(tokenA), msg.sender, address(this), _inputAmount);
             SafeTransferLib.safeTransfer(address(tokenB), msg.sender, outputAmount);
             reserveA += _inputAmount;
@@ -134,7 +141,7 @@ contract LiquidityPool is PoolMath, ERC20Permit, ReentrancyGuard {
         } else {
             // Swap tokenB to tokenA
             outputAmount = _calculateReturn(_inputAmount, reserveB, reserveA, reserveWeight, true);
-            require(tokenA.balanceOf(address(this)) >= outputAmount, "Insufficient liquidity for this trade");
+            if (tokenA.balanceOf(address(this)) < outputAmount) revert InsufficientLiquidity(outputAmount, tokenA.balanceOf(address(this)));
             SafeTransferLib.safeTransferFrom(address(tokenB), msg.sender, address(this), _inputAmount);
             SafeTransferLib.safeTransfer(address(tokenA), msg.sender, outputAmount);
             reserveB += _inputAmount;   
@@ -147,13 +154,13 @@ contract LiquidityPool is PoolMath, ERC20Permit, ReentrancyGuard {
     }
 
     function addSingleSidedLiquidity(address token, uint256 amount) external nonReentrant {
-        require(token == address(tokenA) || token == address(tokenB), "Invalid token address");
+        if (!(token == address(tokenA) || token == address(tokenB))) revert InvalidTokenAddress(token);
 
         uint256 affectedReserve = token == address(tokenA) ? reserveA : reserveB;
         uint256 otherReserve = token == address(tokenA) ? reserveB : reserveA;
 
         uint256 otherTokenAmount = _calculateEquivalent(token, amount);
-        require(otherTokenAmount <= otherReserve, "Insufficient reserve for the other token");
+        if (otherTokenAmount > otherReserve) revert InsufficientReserveForOtherToken(otherTokenAmount, otherReserve);
 
         uint256 sharesToMint = _calculateShares(amount, otherTokenAmount, affectedReserve, otherReserve);
         SafeTransferLib.safeTransferFrom(address(token), msg.sender, address(this), amount);
@@ -175,10 +182,9 @@ contract LiquidityPool is PoolMath, ERC20Permit, ReentrancyGuard {
     /// @param token The address of the token to remove liquidity for.
     /// @param shares The amount of pool shares to burn for removing liquidity.
     function removeSingleSidedLiquidity(address token, uint256 shares) external nonReentrant {
-        require(token == address(tokenA) || token == address(tokenB), "Invalid token address");
+        if (!(token == address(tokenA) || token == address(tokenB))) revert InvalidTokenAddress(token);
 
-
-        require(totalSupply() > 0, "No liquidity in pool");
+        if (totalSupply() == 0) revert NoLiquidityInPool();
         
         // Calculates the user's share of the token reserve based on the pool's total supply.
         uint256 tokenReserve = token == address(tokenA) ? reserveA : reserveB;
@@ -243,7 +249,7 @@ contract LiquidityPool is PoolMath, ERC20Permit, ReentrancyGuard {
         }
 
         // Calculate the proportion of new liquidity to the total pool value
-         // totalSupply from ERC20 represents the total shares existing
+        // totalSupply from ERC20 represents the total shares existing
         shares = (totalValueAdded * totalSupply()) / totalPoolValue;
 
         return shares;
