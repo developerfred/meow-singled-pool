@@ -87,6 +87,10 @@ contract TokenFactoryTest is PRBTest, StdCheats {
         // Adding liquidity to the pool
         LiquidityPool(poolAddress).addLiquidity(amount, amount);
 
+        tokenB.approve(poolAddress, 2 ether);
+        LiquidityPool(poolAddress).addSingleSidedLiquidity(address(tokenB),  0.1 ether);
+        
+
         // Checks after adding liquidity
         uint256 balancePoolA = tokenA.balanceOf(poolAddress);
         uint256 balancePoolB = tokenB.balanceOf(poolAddress);
@@ -131,6 +135,8 @@ contract TokenFactoryTest is PRBTest, StdCheats {
         uint256 userTestReserve = reserveToken.balanceOf(userTest);
         console2.log("user test balance:", userTestReserve);
 
+        transferReserveTokensToUser(address(userTest), 10 ether);
+
         vm.startPrank(userTest);
         uint256 fudingAmount = 1 ether;
         fundingPool(fudingAmount, poolAddress, tokenAddress, address(reserveToken));
@@ -171,8 +177,9 @@ contract TokenFactoryTest is PRBTest, StdCheats {
         console2.log("buy tokens", tokenAddress);
         console2.log("user Start Balance", startBalance);
         LiquidityPool(poolAddress).swapTokens(tokenAddress, buyAmount); // Assuming this swaps reserve tokens for meow
-            // tokens
+        // tokens
         uint256 postBuyBalance = meowTokenIERC20.balanceOf(user);
         console2.log("User bought tokens, new balance:", postBuyBalance);
     }
+    
 }

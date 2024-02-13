@@ -1,5 +1,5 @@
 
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
 import  "lib/prb-math/src/UD60x18.sol";
