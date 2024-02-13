@@ -6,6 +6,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol";
 import "./math/PoolMath.sol";
 import { ReentrancyGuard } from "lib/solbase/src/utils/ReentrancyGuard.sol";
+import { SafeTransferLib } from "lib/solady/src/utils/SafeTransferLib.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /// @title LiquidityPool for Token Swapping and Liquidity Provision
@@ -82,11 +83,11 @@ contract LiquidityPool is PoolMath, ERC20Permit, ReentrancyGuard {
             ? _tokenAAmount + _tokenBAmount
             : (totalSupply * (_tokenAAmount + _tokenBAmount)) / totalLiquidity;
 
-        tokenA.safeTransferFrom(msg.sender, address(this), _tokenAAmount);
-        tokenB.safeTransferFrom(msg.sender, address(this), _tokenBAmount);
-
         reserveA += _tokenAAmount;
         reserveB += _tokenBAmount;
+
+        SafeTransferLib.safeTransferFrom(address(tokenA), msg.sender, address(this), _tokenAAmount);
+        SafeTransferLib.safeTransferFrom(address(tokenB), msg.sender, address(this), _tokenBAmount);
 
         _mint(msg.sender, sharesToMint);
 
@@ -103,11 +104,11 @@ contract LiquidityPool is PoolMath, ERC20Permit, ReentrancyGuard {
 
         _burn(msg.sender, _shares);
 
-        tokenA.safeTransfer(msg.sender, tokenAAmount);
-        tokenB.safeTransfer(msg.sender, tokenBAmount);
-
         reserveA -= tokenAAmount;
         reserveB -= tokenBAmount;
+
+        SafeTransferLib.safeTransfer(address(tokenA), msg.sender, tokenAAmount);
+        SafeTransferLib.safeTransfer(address(tokenB), msg.sender, tokenBAmount);
 
         emit LiquidityRemoved(msg.sender, tokenAAmount, tokenBAmount, _shares);
     }
@@ -116,7 +117,7 @@ contract LiquidityPool is PoolMath, ERC20Permit, ReentrancyGuard {
     /// @dev Calculates the token return amount using the PoolMath library
     /// @param _inputToken Address of the input token
     /// @param _inputAmount Amount of the input token
-    function swapTokens(address _inputToken, uint256 _inputAmount) external {
+    function swapTokens(address _inputToken, uint256 _inputAmount) external nonReentrant {
         require(_inputToken == address(tokenA) || _inputToken == address(tokenB), "Invalid input token");
         bool isInputTokenA = _inputToken == address(tokenA);
 
@@ -126,17 +127,17 @@ contract LiquidityPool is PoolMath, ERC20Permit, ReentrancyGuard {
             // Swap tokenA to tokenB
             outputAmount = _calculateReturn(_inputAmount, reserveA, reserveB, reserveWeight, true);
             require(tokenB.balanceOf(address(this)) >= outputAmount, "Insufficient liquidity for this trade");
-            tokenA.transferFrom(msg.sender, address(this), _inputAmount);
-            tokenB.transfer(msg.sender, outputAmount);
+            SafeTransferLib.safeTransferFrom(address(tokenA), msg.sender, address(this), _inputAmount);
+            SafeTransferLib.safeTransfer(address(tokenB), msg.sender, outputAmount);
             reserveA += _inputAmount;
             reserveB -= outputAmount;
         } else {
             // Swap tokenB to tokenA
             outputAmount = _calculateReturn(_inputAmount, reserveB, reserveA, reserveWeight, true);
             require(tokenA.balanceOf(address(this)) >= outputAmount, "Insufficient liquidity for this trade");
-            tokenB.transferFrom(msg.sender, address(this), _inputAmount);
-            tokenA.transfer(msg.sender, outputAmount);
-            reserveB += _inputAmount;
+            SafeTransferLib.safeTransferFrom(address(tokenB), msg.sender, address(this), _inputAmount);
+            SafeTransferLib.safeTransfer(address(tokenA), msg.sender, outputAmount);
+            reserveB += _inputAmount;   
             reserveA -= outputAmount;
         }
 
@@ -155,8 +156,7 @@ contract LiquidityPool is PoolMath, ERC20Permit, ReentrancyGuard {
         require(otherTokenAmount <= otherReserve, "Insufficient reserve for the other token");
 
         uint256 sharesToMint = _calculateShares(amount, otherTokenAmount, affectedReserve, otherReserve);
-
-        IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
+        SafeTransferLib.safeTransferFrom(address(token), msg.sender, address(this), amount);
 
         _updateReserves(token, amount, otherTokenAmount);
 
@@ -177,12 +177,12 @@ contract LiquidityPool is PoolMath, ERC20Permit, ReentrancyGuard {
     function removeSingleSidedLiquidity(address token, uint256 shares) external nonReentrant {
         require(token == address(tokenA) || token == address(tokenB), "Invalid token address");
 
-        uint256 totalSupply = totalSupply();
-        require(totalSupply > 0, "No liquidity in pool");
 
+        require(totalSupply() > 0, "No liquidity in pool");
+        
         // Calculates the user's share of the token reserve based on the pool's total supply.
         uint256 tokenReserve = token == address(tokenA) ? reserveA : reserveB;
-        uint256 amountToWithdraw = (tokenReserve * shares) / totalSupply;
+        uint256 amountToWithdraw = (tokenReserve * shares) / totalSupply();
 
         // Ensures the user has enough shares to perform the withdrawal.
         require(balanceOf(msg.sender) >= shares, "Not enough shares");
@@ -198,7 +198,7 @@ contract LiquidityPool is PoolMath, ERC20Permit, ReentrancyGuard {
         }
 
         // Transfers the specified token back to the user.
-        IERC20(token).safeTransfer(msg.sender, amountToWithdraw);
+        SafeTransferLib.safeTransfer(address(token), msg.sender, amountToWithdraw);
 
         // Emits an event with the adjusted amounts.
         emit LiquiditySingleRemoved(msg.sender, token, amountToWithdraw, shares);
@@ -243,8 +243,8 @@ contract LiquidityPool is PoolMath, ERC20Permit, ReentrancyGuard {
         }
 
         // Calculate the proportion of new liquidity to the total pool value
-        uint256 totalSupply = totalSupply(); // totalSupply from ERC20 represents the total shares existing
-        shares = (totalValueAdded * totalSupply) / totalPoolValue;
+         // totalSupply from ERC20 represents the total shares existing
+        shares = (totalValueAdded * totalSupply()) / totalPoolValue;
 
         return shares;
     }
