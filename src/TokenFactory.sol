@@ -5,17 +5,21 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import {MEOWChild} from "./MEOWChild.sol";
-import { LiquidityPool } from "./LiquidityPool.sol";
 
 /// @title TokenFactory for creating MEOWChild tokens and corresponding liquidity pools.
 /// @dev Extends Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeable for upgradability, ownership management, and reentrancy protection.
 contract TokenFactory is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeable {
     address public defaultReserveToken;
+    address public immutable exchangeAddress;
 
-    // Array to keep track of all tokens created by this factory.
-    address[] public allTokens;
-    // Array to keep track of all liquidity pools created by this factory.
-    address[] public allPools;
+    struct TokenConfig {
+        address tokenAddress;
+        address reserveToken;
+        uint256 slope;
+        uint256 reserveWeight;
+    }
+
+    mapping(address => TokenConfig) public tokenConfigs;
 
     /// @notice Emitted when a new token is created.
     /// @param tokenAddress The address of the newly created token.
@@ -46,39 +50,36 @@ contract TokenFactory is Initializable, OwnableUpgradeable, ReentrancyGuardUpgra
     /// @param slope The slope for the liquidity pool pricing curve.
     /// @param creator The address of the token's creator.
     /// @return tokenAddress The address of the newly created token.
-    /// @return poolAddress The address of the newly created liquidity pool.
     function createToken(
         string memory name,
         string memory symbol,
         uint256 initialSupply,
         uint256 reserveWeight,
         uint256 slope,
-        address creator
-    ) public nonReentrant returns (address tokenAddress, address poolAddress) {
+        address creator,
+        address reserveTokenAddress
+    ) public nonReentrant returns (address tokenAddress) {
         require(initialSupply > 0, "Initial supply must be > 0");
         require(reserveWeight > 0 && slope > 0, "Invalid reserveWeight or slope");
 
-        MEOWChild newToken = new MEOWChild(name, symbol, initialSupply, creator);
+        address _reserveToken = reserveTokenAddress == address(0) ? defaultReserveToken : reserveTokenAddress;
+        
+        MEOWChild newToken = new MEOWChild(name, symbol, initialSupply, creator, exchangeAddress);
         tokenAddress = address(newToken);
-        allTokens.push(tokenAddress);
 
-        LiquidityPool newPool = new LiquidityPool(tokenAddress, defaultReserveToken, reserveWeight, slope);
-        poolAddress = address(newPool);
-        allPools.push(poolAddress);
+        tokenConfigs[tokenAddress] = TokenConfig({
+            tokenAddress: tokenAddress,
+            reserveToken: _reserveToken,
+            slope: slope,
+            reserveWeight: reserveWeight
+        });
 
         emit TokenCreated(tokenAddress, creator);
-        emit PoolCreated(poolAddress, tokenAddress, defaultReserveToken);
     }
 
-    /// @notice Returns the addresses of all tokens created by this factory.
-    /// @return An array of addresses of all created tokens.
-    function getAllTokens() public view returns (address[] memory) {
-        return allTokens;
-    }
-
-    /// @notice Returns the addresses of all liquidity pools created by this factory.
-    /// @return An array of addresses of all created liquidity pools.
-    function getAllPools() public view returns (address[] memory) {
-        return allPools;
+    function getTokenConfig(address tokenAddress) external view returns (TokenConfig memory, uint256) {
+        TokenConfig memory config = tokenConfigs[tokenAddress];
+        uint256 totalSupply = MEOWChild(tokenAddress).totalSupply();
+        return (config, totalSupply);
     }
 }

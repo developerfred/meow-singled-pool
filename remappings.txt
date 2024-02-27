@@ -4,4 +4,5 @@ forge-std/=node_modules/forge-std/
 @prb/math/=node_modules/@prb/math/
 ds-test/=lib/solbase/lib/ds-test/src/
 solbase/=lib/solbase/src/
+solady/=lib/solady/src/
 @openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/
