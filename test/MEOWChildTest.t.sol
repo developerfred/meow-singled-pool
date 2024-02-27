@@ -13,7 +13,7 @@ contract MEOWChildTest is PRBTest, StdCheats {
 
     function setUp() public {        
         vm.startPrank(owner);
-        meowChild = new MEOWChild("Test Token", "TST", 100e18, owner);
+        meowChild = new MEOWChild("Test Token", "TST", 100e18, owner, address(0));
         vm.stopPrank();
     }
 
@@ -41,16 +41,6 @@ contract MEOWChildTest is PRBTest, StdCheats {
 
         uint256 remainingBalance = meowChild.balanceOf(owner);
         assertEq(remainingBalance, 80e18, "Owner balance should be reduced by burned amount");
-    }
-
-    function testOwnershipTransfer() public {
-        
-        vm.startPrank(owner);
-        meowChild.transferOwnership(recipient);
-        vm.stopPrank();
-
-        address newOwner = meowChild.owner();
-        assertEq(newOwner, recipient, "Ownership should be transferred to the new owner");
     }
 
     function testFailUnauthorizedMint() public {

@@ -57,14 +57,17 @@ contract TokenFactory is Initializable, OwnableUpgradeable, ReentrancyGuardUpgra
         uint256 reserveWeight,
         uint256 slope,
         address creator,
-        address reserveTokenAddress
+        address reserveTokenAddress, 
+        address _exchangeAddress
     ) public nonReentrant returns (address tokenAddress) {
         require(initialSupply > 0, "Initial supply must be > 0");
         require(reserveWeight > 0 && slope > 0, "Invalid reserveWeight or slope");
+        require(_exchangeAddress != address(0), "Exchange address cannot be the zero address");
+
 
         address _reserveToken = reserveTokenAddress == address(0) ? defaultReserveToken : reserveTokenAddress;
         
-        MEOWChild newToken = new MEOWChild(name, symbol, initialSupply, creator, exchangeAddress);
+        MEOWChild newToken = new MEOWChild(name, symbol, initialSupply, creator, _exchangeAddress);
         tokenAddress = address(newToken);
 
         tokenConfigs[tokenAddress] = TokenConfig({
