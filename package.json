@@ -1,10 +1,10 @@
 {
-  "name": "@prb/foundry-template",
-  "description": "Foundry-based template for developing Solidity smart contracts",
+  "name": "@codingsh/meow-create",
+  "description": "Meow Factory with Bancor Formula",
   "version": "1.0.0",
   "author": {
-    "name": "Paul Razvan Berg",
-    "url": "https://github.com/PaulRBerg"
+    "name": "codingsh",
+    "url": "https://github.com/developerfred"
   },
   "dependencies": {
     "@openzeppelin/contracts": "^5.0.1",
@@ -25,7 +25,7 @@
     "foundry",
     "smart-contracts",
     "solidity",
-    "template"
+    "meow"
   ],
   "private": true,
   "scripts": {

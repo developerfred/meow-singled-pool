@@ -11,9 +11,9 @@ contract MEOWChildTest is PRBTest, StdCheats {
     address owner = address(1);
     address recipient = address(2);
 
-    function setUp() public {        
+    function setUp() public {
         vm.startPrank(owner);
-        meowChild = new MEOWChild("Test Token", "TST", 100e18, owner, address(0));
+        meowChild = new MEOWChild("Test Token", "TST", 100e18, owner, address(0), address(4));
         vm.stopPrank();
     }
 
@@ -22,7 +22,7 @@ contract MEOWChildTest is PRBTest, StdCheats {
         assertEq(ownerBalance, 100e18, "Owner should have the initial supply");
     }
 
-    function testMint() public {        
+    function testMint() public {
         uint256 mintAmount = 50e18;
         vm.startPrank(owner);
         meowChild.mint(recipient, mintAmount);
@@ -44,14 +44,14 @@ contract MEOWChildTest is PRBTest, StdCheats {
     }
 
     function testFailUnauthorizedMint() public {
-        
+
         vm.startPrank(recipient);
-        meowChild.mint(recipient, 10e18); 
+        meowChild.mint(recipient, 10e18);
         vm.stopPrank();
     }
 
     function testFailUnauthorizedBurn() public {
-       
+
         vm.startPrank(recipient);
         meowChild.burn(owner, 10e18);
         vm.stopPrank();

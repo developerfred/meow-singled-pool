@@ -27,3 +27,12 @@ The provided Solidity test contract outlines a comprehensive testing scenario th
 - Deploying and initializing the `TokenFactory`, setting up the default reserve token, and configuring the exchange interface.
 - Creating a `MEOWChild` token with specific parameters, including the slope and reserve weight for the pricing curve.
 - Simulating buying and selling transactions to verify the dynamic pricing mechanism, ensuring that token prices adjust according to the preset curve.
+
+## Deploy Contracts
+
+| Network          | Sepolia               |
+|------------------|-----------------------|
+| [TokenFactory](./src/TokenFactory.sol)     | 0xcfFa6a5951B3b01B1b08E386Ac1fb4B567eCc9fD |
+| [TokenExchange](./src/TokenExchange.sol)     | 0x2c4145a98611B2Dc6Ecfcd0bcc2A2f841E0916BF |
+| [Meow Test token](./src/mock/TokenTest.sol)  | 0x54ceABC39627d9cEB578BB5fC4CE3DB972b2ce69 |
+
