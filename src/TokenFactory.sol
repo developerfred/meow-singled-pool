@@ -124,7 +124,6 @@ contract TokenFactory is Initializable, OwnableUpgradeable, ReentrancyGuardUpgra
         return isCreatedToken[tokenAddress];
     }
 
-
     /**
      * @notice Retrieves a batch of token addresses created by the factory.
      * @param from Index to start retrieving tokens from.

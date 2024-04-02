@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.4;
+pragma solidity ^0.8.23;
 
 import { PRBTest } from "@prb/test/src/PRBTest.sol";
 import { StdCheats } from "forge-std/src/StdCheats.sol";
@@ -44,14 +44,12 @@ contract MEOWChildTest is PRBTest, StdCheats {
     }
 
     function testFailUnauthorizedMint() public {
-
         vm.startPrank(recipient);
         meowChild.mint(recipient, 10e18);
         vm.stopPrank();
     }
 
     function testFailUnauthorizedBurn() public {
-
         vm.startPrank(recipient);
         meowChild.burn(owner, 10e18);
         vm.stopPrank();

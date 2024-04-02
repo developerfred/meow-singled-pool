@@ -25,7 +25,11 @@ abstract contract PoolMath {
         uint32 reserveWeight,
         uint256 amount,
         bool isBuying
-    ) internal pure returns (uint256) {
+    )
+        internal
+        pure
+        returns (uint256)
+    {
         bytes16 supply = ABDKMathQuad.fromUInt(tokenSupply);
         bytes16 balance = ABDKMathQuad.fromUInt(reserveBalance);
         bytes16 weight = ABDKMathQuad.fromUInt(reserveWeight).div(ABDKMathQuad.fromUInt(MAX_WEIGHT));
@@ -49,7 +53,11 @@ abstract contract PoolMath {
         bytes16 balance,
         bytes16 weight,
         bytes16 amt
-    ) private pure returns (bytes16) {
+    )
+        private
+        pure
+        returns (bytes16)
+    {
         if (amt == 0) {
             return 0;
         }
@@ -74,7 +82,11 @@ abstract contract PoolMath {
         bytes16 balance,
         bytes16 weight,
         bytes16 amt
-    ) private pure returns (bytes16) {
+    )
+        private
+        pure
+        returns (bytes16)
+    {
         if (amt == 0) {
             return 0;
         }

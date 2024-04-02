@@ -34,8 +34,8 @@ contract TokenExchangeTest is PRBTest, StdCheats {
         uint256 sepoliaForkId = vm.createFork("https://eth-sepolia-public.unifra.io");
         vm.selectFork(sepoliaForkId);
 
-        vm.rollFork(5608810);
-        assertEq(block.number, 5608810);
+        vm.rollFork(5_608_810);
+        assertEq(block.number, 5_608_810);
 
         // Simulate funding wallets with funds
         vm.deal(richWallet, 100 ether); // Assign 100 ether to the rich wallet
@@ -60,7 +60,14 @@ contract TokenExchangeTest is PRBTest, StdCheats {
         reserveToken = ReserveTokenMock(meowTestTokenAddress);
 
         address tokenAddress = tokenFactory.createToken(
-            "UniqueCollectible", "UCOL", 5000 ether, 1_000_000, tokenPrice, admin, address(reserveToken), address(tokenExchange)
+            "UniqueCollectible",
+            "UCOL",
+            5000 ether,
+            1_000_000,
+            tokenPrice,
+            admin,
+            address(reserveToken),
+            address(tokenExchange)
         );
         testToken = MEOWChild(tokenAddress);
         reserveToken.approve(address(testToken), 100 ether); // Increase the amount of reserve deposited
